@@ -95,14 +95,14 @@ export default function App() {
       const newGrid = cloneGrid(grid);
       const tile = newGrid[row][col];
 
-      if (tile.state === 'empty' || tile.state === 'unknown') {
-        // Clicking an empty cell just moves the cursor there
+      if (!tile.letter) {
+        // Empty cell — just move the cursor there
         setActiveRow(row);
         setActiveCol(col);
         return;
       }
 
-      // Cycle the state
+      // Has a letter — cycle grey → yellow → green → grey
       tile.state = STATE_CYCLE[tile.state];
       gridUndo.set(newGrid);
       setActiveRow(row);
