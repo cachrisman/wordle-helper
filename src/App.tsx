@@ -237,17 +237,19 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        <section className="grid-section" aria-label="Guess input">
-          <GuessGrid
-            grid={grid}
-            activeRow={activeRow}
-            activeCol={activeCol}
-            onTileClick={handleTileClick}
-            onLetterInput={handleLetterInput}
-            onBackspace={handleBackspace}
-          />
+        <div className="input-area">
+          <div className="grid-wrapper" aria-label="Guess input">
+            <GuessGrid
+              grid={grid}
+              activeRow={activeRow}
+              activeCol={activeCol}
+              onTileClick={handleTileClick}
+              onLetterInput={handleLetterInput}
+              onBackspace={handleBackspace}
+            />
+          </div>
           <OnScreenKeyboard grid={grid} onKey={handleKey} />
-        </section>
+        </div>
 
         <section className="panel-section" aria-label="Analysis">
           {view === 'hints' ? (

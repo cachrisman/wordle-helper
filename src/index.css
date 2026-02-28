@@ -110,50 +110,55 @@ body {
 }
 
 .app-header {
+  flex-shrink: 0;
   text-align: center;
-  padding: var(--space-md) var(--space-md) var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
   border-bottom: 1px solid var(--clr-border);
 }
 
 .app-title {
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   color: var(--clr-text);
 }
 
 .app-subtitle {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   color: var(--clr-text-muted);
-  margin-top: 2px;
 }
 
 .app-main {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  min-height: 0; /* allow children to shrink/scroll correctly */
 }
 
-.grid-section {
+/* Grid + keyboard block — fixed size, never scrolls */
+.input-area {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-md) var(--space-md) var(--space-sm);
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-sm) var(--space-xs);
   background: var(--clr-bg);
-  position: sticky;
-  top: 0;
-  z-index: 10;
   border-bottom: 1px solid var(--clr-border);
 }
 
+.grid-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+/* Hints / candidates panel — fills remaining space and scrolls */
 .panel-section {
   flex: 1;
-  padding: var(--space-md);
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-md);
 }
 
 /* =====================================================================
@@ -172,13 +177,14 @@ body {
 }
 
 .tile {
-  width: 52px;
-  height: 52px;
+  /* Size via clamp so tiles fit any phone without horizontal scroll */
+  width: clamp(44px, calc((100vw - 80px) / 5), 58px);
+  height: clamp(44px, calc((100vw - 80px) / 5), 58px);
   border: 2px solid var(--clr-border);
   border-radius: var(--radius-sm);
   background: var(--clr-surface);
   color: var(--clr-text);
-  font-size: 1.4rem;
+  font-size: clamp(1rem, 3.5vw, 1.4rem);
   font-weight: 700;
   font-family: var(--font);
   cursor: pointer;
@@ -186,9 +192,6 @@ body {
   align-items: center;
   justify-content: center;
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-  /* Ensure minimum touch target even for small tiles */
-  min-width: var(--touch-min);
-  min-height: var(--touch-min);
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
@@ -241,25 +244,27 @@ body {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  /* Fill the full available width so keys scale correctly */
   width: 100%;
-  max-width: 480px;
+  padding: 0 4px;
+  box-sizing: border-box;
 }
 
 .osk__row {
   display: flex;
-  justify-content: center;
   gap: 4px;
 }
 
 .osk__key {
+  /* Height satisfies 44 px touch target; width comes from flex, not min-width */
   height: var(--touch-min);
-  min-width: var(--touch-min);
-  padding: 0 6px;
+  min-width: 0;          /* allow shrinking below content size */
+  padding: 0;
   border: none;
   border-radius: var(--radius-sm);
   background: var(--clr-surface-raised);
   color: var(--clr-text);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   font-family: var(--font);
   cursor: pointer;
@@ -267,14 +272,12 @@ body {
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   transition: background-color 0.12s ease, transform 0.08s ease;
-  flex: 1;
-  max-width: 40px;
+  flex: 1;               /* equal share of row width */
 }
 
 .osk__key--wide {
-  max-width: 58px;
-  font-size: 0.7rem;
-  padding: 0 4px;
+  flex: 1.5;             /* Enter / ⌫ get 50% more space than a letter key */
+  font-size: 0.68rem;
 }
 
 .osk__key:active {
@@ -831,39 +834,26 @@ body {
    Responsive tweaks
    ===================================================================== */
 
-@media (min-width: 480px) {
-  .tile {
-    width: 58px;
-    height: 58px;
-  }
-
-  .app-title {
-    font-size: 1.75rem;
-  }
-}
-
 @media (min-width: 768px) {
   .app-main {
     flex-direction: row;
-    align-items: flex-start;
+    align-items: stretch;
   }
 
-  .grid-section {
+  .input-area {
     position: sticky;
     top: 0;
-    max-width: 360px;
+    width: 340px;
     flex-shrink: 0;
+    align-self: flex-start;
     border-right: 1px solid var(--clr-border);
     border-bottom: none;
-    height: 100dvh;
+    padding: var(--space-md) var(--space-sm);
+    height: calc(100dvh - var(--bottom-bar-height));
     overflow-y: auto;
-    justify-content: flex-start;
-    padding-top: var(--space-lg);
   }
 
   .panel-section {
-    overflow-y: auto;
-    height: 100dvh;
     padding: var(--space-lg);
   }
 }
