@@ -117,8 +117,9 @@ export default function App() {
       const tile = newGrid[activeRow][activeCol];
 
       tile.letter = letter.toLowerCase();
+      // Always default to grey — every entered letter has a known state
       if (tile.state === 'empty' || tile.state === 'unknown') {
-        tile.state = 'unknown';
+        tile.state = 'grey';
       }
 
       gridUndo.set(newGrid);
