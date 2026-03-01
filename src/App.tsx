@@ -8,7 +8,7 @@ import { OfflineIndicator } from './components/OfflineIndicator';
 import { OnboardingBanner } from './components/OnboardingBanner';
 import { buildConstraintsFromGrid, createEmptyGrid } from './lib/constraints';
 import { filterWords } from './lib/filter';
-import { analyzeCandidates, detectConflicts } from './lib/analyze';
+import { analyzeCandidates, detectConflicts, getTopProbeWords } from './lib/analyze';
 import type { GridState, TileState, Conflict } from './lib/types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useOnline } from './hooks/useOnline';
@@ -79,9 +79,11 @@ export default function App() {
 
   // --- Derived state ---
   const constraints = useMemo(() => buildConstraintsFromGrid(grid), [grid]);
-  const candidates = useMemo(() => filterWords(WORDS, constraints), [constraints]);
-  const analysis = useMemo(() => analyzeCandidates(candidates), [candidates]);
-  const conflicts = useMemo(() => detectConflicts(constraints), [constraints]);
+  const candidates  = useMemo(() => filterWords(WORDS, constraints), [constraints]);
+  const analysis    = useMemo(() => analyzeCandidates(candidates), [candidates]);
+  const conflicts   = useMemo(() => detectConflicts(constraints), [constraints]);
+  // Partition-scored probe words — only when ≤150 candidates (stays fast)
+  const probeWords  = useMemo(() => getTopProbeWords(candidates, WORDS), [candidates]);
 
   // Track count deltas
   useEffect(() => {
@@ -258,6 +260,7 @@ export default function App() {
               analysis={analysis}
               prevCount={prevCount}
               conflicts={conflicts}
+              probeWords={probeWords}
               onResolveConflict={handleResolveConflict}
             />
           ) : (

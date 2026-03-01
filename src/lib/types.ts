@@ -53,6 +53,21 @@ export interface CandidateAnalysis {
   topExplorationLetters: string[];
 }
 
+/**
+ * A candidate probe word scored by how many distinct colour-pattern groups
+ * (partitions) it creates across the remaining candidates.
+ * More partitions = more information gained from that guess.
+ */
+export interface ProbeWord {
+  word: string;
+  /** Number of distinct colour-pattern buckets across all remaining candidates */
+  partitions: number;
+  /** Average candidates per bucket (lower = more decisive) */
+  avgGroupSize: number;
+  /** True if this word is itself still a possible answer */
+  isCandidate: boolean;
+}
+
 /** A single conflict detected in the constraints */
 export interface Conflict {
   type: 'green-also-excluded' | 'yellow-also-excluded' | 'impossible-count';

@@ -1,14 +1,17 @@
 import React from 'react';
-import type { CandidateAnalysis, Conflict } from '../lib/types';
+import type { CandidateAnalysis, Conflict, ProbeWord } from '../lib/types';
 
 interface HintsPanelProps {
   analysis: CandidateAnalysis;
   prevCount: number | null;
   conflicts: Conflict[];
+  probeWords: ProbeWord[];
   onResolveConflict?: (conflict: Conflict) => void;
 }
 
-const ALPHABET = 'abcdefghijklmnopqrstuvwxyz'.split('');
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
 
 function FrequencyBar({ value, label }: { value: number; label: string }) {
   const pct = Math.round(value * 100);
@@ -23,7 +26,7 @@ function FrequencyBar({ value, label }: { value: number; label: string }) {
           aria-valuenow={pct}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label={`${label} appears in ${pct}% of remaining candidates`}
+          aria-label={`${label} in ${pct}% of remaining words`}
         />
       </div>
       <span className="freq-bar__pct">{pct}%</span>
@@ -31,15 +34,47 @@ function FrequencyBar({ value, label }: { value: number; label: string }) {
   );
 }
 
-export function HintsPanel({ analysis, prevCount, conflicts, onResolveConflict }: HintsPanelProps) {
-  const { count, frequency, topExplorationLetters } = analysis;
+function ProbeWordRow({ probe, total }: { probe: ProbeWord; total: number }) {
+  // Max possible partitions for N candidates is min(N, 243)
+  const maxPartitions = Math.min(total, 243);
+  const quality = probe.partitions / maxPartitions; // 0–1
+  const qualityClass =
+    quality >= 0.66 ? 'probe--high' : quality >= 0.33 ? 'probe--mid' : 'probe--low';
 
+  return (
+    <div className={`probe-row ${qualityClass}`}>
+      <span className="probe-row__word">
+        {probe.word.toUpperCase()}
+        {probe.isCandidate && <span className="probe-row__tag" title="Still a possible answer">★</span>}
+      </span>
+      <span className="probe-row__stats">
+        <strong>{probe.partitions}</strong>{' '}
+        <span className="probe-row__label">
+          group{probe.partitions !== 1 ? 's' : ''}
+        </span>
+        <span className="probe-row__avg">
+          ~{probe.avgGroupSize.toFixed(1)} per group
+        </span>
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main panel
+// ---------------------------------------------------------------------------
+
+export function HintsPanel({
+  analysis,
+  prevCount,
+  conflicts,
+  probeWords,
+  onResolveConflict,
+}: HintsPanelProps) {
+  const { count, frequency } = analysis;
   const delta =
-    prevCount !== null && prevCount !== count
-      ? prevCount - count
-      : null;
+    prevCount !== null && prevCount !== count ? prevCount - count : null;
 
-  // Top 8 letters by overall frequency (for the overview bar chart)
   const topOverall = Object.entries(frequency.overall)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
@@ -48,7 +83,8 @@ export function HintsPanel({ analysis, prevCount, conflicts, onResolveConflict }
 
   return (
     <section className="hints-panel" aria-label="Hints panel">
-      {/* --- Conflict alerts --- */}
+
+      {/* Conflict alerts */}
       {conflicts.length > 0 && (
         <div className="conflicts" role="alert" aria-live="polite">
           <h3 className="conflicts__title">⚠ Conflict detected</h3>
@@ -61,7 +97,7 @@ export function HintsPanel({ analysis, prevCount, conflicts, onResolveConflict }
                   onClick={() => onResolveConflict(c)}
                   aria-label={`Fix conflict for letter ${c.letter.toUpperCase()}`}
                 >
-                  Remove exclusion for {c.letter.toUpperCase()}
+                  Remove grey for {c.letter.toUpperCase()}
                 </button>
               )}
             </div>
@@ -69,14 +105,14 @@ export function HintsPanel({ analysis, prevCount, conflicts, onResolveConflict }
         </div>
       )}
 
-      {/* --- Remaining count --- */}
+      {/* Remaining count */}
       <div className="hints-count" aria-live="polite" aria-atomic="true">
         <span className="hints-count__number">{count}</span>
         <span className="hints-count__label"> word{count !== 1 ? 's' : ''} remaining</span>
         {delta !== null && (
           <span
             className={`hints-count__delta hints-count__delta--${delta > 0 ? 'good' : 'bad'}`}
-            aria-label={`Changed by ${delta > 0 ? '-' : '+'}${Math.abs(delta)}`}
+            aria-label={delta > 0 ? `reduced by ${delta}` : `increased by ${Math.abs(delta)}`}
           >
             {delta > 0 ? `−${delta}` : `+${Math.abs(delta)}`}
           </span>
@@ -84,31 +120,74 @@ export function HintsPanel({ analysis, prevCount, conflicts, onResolveConflict }
       </div>
 
       {count === 0 && (
-        <p className="hints-empty">No words match. Check for conflicts above or reset.</p>
+        <p className="hints-empty">No words match — check for conflicts above, or reset.</p>
       )}
 
       {count > 0 && (
         <>
-          {/* --- Letter frequency overview --- */}
+          {/* ── Probe words (partition scoring) ── */}
           <div className="hints-section">
-            <h3 className="hints-section__title">Letter frequency in remaining words</h3>
-            <div className="freq-list" aria-label="Letter frequencies">
+            <h3 className="hints-section__title">
+              Suggested probes
+              <span className="hints-section__subtitle">
+                {probeWords.length > 0
+                  ? ' — ranked by information gain'
+                  : count > 150
+                  ? ' — available once below 150 words'
+                  : ''}
+              </span>
+            </h3>
+
+            {probeWords.length > 0 ? (
+              <>
+                <p className="hints-tip">
+                  Each probe is scored by how many distinct colour-pattern groups
+                  it splits the remaining {count} words into.
+                  More groups = more information, whatever the answer turns out to be.
+                  ★ marks words that are still possible answers.
+                </p>
+                <div
+                  className="probe-list"
+                  aria-label="Top probe words by information gain"
+                >
+                  {probeWords.map(p => (
+                    <ProbeWordRow key={p.word} probe={p} total={count} />
+                  ))}
+                </div>
+                <p className="hints-tip hints-tip--subtle">
+                  These are informational — not recommendations.
+                  The puzzle is yours to solve.
+                </p>
+              </>
+            ) : count <= 150 ? (
+              <p className="hints-empty-small">Computing…</p>
+            ) : (
+              <p className="hints-empty-small">
+                Enter more guesses to narrow the field. Probe analysis appears
+                once fewer than 150 words remain.
+              </p>
+            )}
+          </div>
+
+          {/* ── Letter frequency ── */}
+          <div className="hints-section">
+            <h3 className="hints-section__title">Letter frequency</h3>
+            <div className="freq-list" aria-label="Letter frequencies in remaining words">
               {topOverall.map(([letter, freq]) => (
                 <FrequencyBar key={letter} value={freq} label={letter} />
               ))}
               {topOverall.length === 0 && (
-                <p className="hints-empty-small">No frequency data yet.</p>
+                <p className="hints-empty-small">No data yet.</p>
               )}
             </div>
           </div>
 
-          {/* --- Per-position frequency --- */}
+          {/* ── Per-position best letters ── */}
           <div className="hints-section">
-            <h3 className="hints-section__title">Best letter per position</h3>
+            <h3 className="hints-section__title">Best letter by position</h3>
             <div className="pos-grid">
               {[0, 1, 2, 3, 4].map(pos => {
-                const posData = frequency.byPosition[pos] ?? {};
-                const best = Object.entries(posData)
+                const best = Object.entries(frequency.byPosition[pos] ?? {})
                   .sort((a, b) => b[1] - a[1])
                   .slice(0, 3);
                 return (
@@ -118,19 +197,14 @@ export function HintsPanel({ analysis, prevCount, conflicts, onResolveConflict }
                     style={{ borderColor: positionColors[pos] }}
                     aria-label={`Position ${pos + 1}`}
                   >
-                    <div
-                      className="pos-cell__header"
-                      style={{ backgroundColor: positionColors[pos] }}
-                    >
+                    <div className="pos-cell__header" style={{ backgroundColor: positionColors[pos] }}>
                       #{pos + 1}
                     </div>
                     <div className="pos-cell__letters">
                       {best.map(([letter, freq]) => (
                         <div key={letter} className="pos-cell__letter">
                           <span className="pos-cell__letter-char">{letter.toUpperCase()}</span>
-                          <span className="pos-cell__letter-pct">
-                            {Math.round(freq * 100)}%
-                          </span>
+                          <span className="pos-cell__letter-pct">{Math.round(freq * 100)}%</span>
                         </div>
                       ))}
                       {best.length === 0 && <span className="pos-cell__empty">—</span>}
@@ -139,29 +213,6 @@ export function HintsPanel({ analysis, prevCount, conflicts, onResolveConflict }
                 );
               })}
             </div>
-          </div>
-
-          {/* --- Exploration suggestions --- */}
-          <div className="hints-section">
-            <h3 className="hints-section__title">Exploration suggestions</h3>
-            <p className="hints-tip">
-              Try a word containing these high-value letters to maximise what you learn.
-              Avoid repeating letters you've already confirmed.
-            </p>
-            <div className="explore-letters" aria-label="Suggested letters to explore">
-              {topExplorationLetters.map(letter => (
-                <span key={letter} className="explore-badge" aria-label={letter.toUpperCase()}>
-                  {letter.toUpperCase()}
-                </span>
-              ))}
-              {topExplorationLetters.length === 0 && (
-                <span className="hints-empty-small">Enter some guesses to see suggestions.</span>
-              )}
-            </div>
-            <p className="hints-tip hints-tip--subtle">
-              Words with diverse, unchecked letters give you the most information.
-              This tool won't pick an answer — the discovery is yours.
-            </p>
           </div>
         </>
       )}

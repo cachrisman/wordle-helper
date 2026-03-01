@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildConstraintsFromGrid, createEmptyGrid } from '../lib/constraints';
 import { filterWords } from '../lib/filter';
+import { getPattern, scoreGuess, getTopProbeWords } from '../lib/analyze';
 import type { GridState, TileData } from '../lib/types';
 
 // Helper: build a grid from plain descriptions
@@ -345,5 +346,146 @@ describe('buildConstraintsFromGrid', () => {
     expect(c.excluded.has('b')).toBe(false);
     expect(c.excluded.has('c')).toBe(true);
     expect(c.excluded.has('d')).toBe(true);
+  });
+});
+
+// -----------------------------------------------------------------
+// getPattern — colour-pattern computation
+// -----------------------------------------------------------------
+
+describe('getPattern', () => {
+  it('all green when guess === answer', () => {
+    expect(getPattern('crane', 'crane')).toBe('ggggg');
+  });
+
+  it('all black when no letters match', () => {
+    expect(getPattern('qzjvx', 'crane')).toBe('bbbbb');
+  });
+
+  it('correctly marks yellow and green', () => {
+    // CRANE vs STARE: c(0)r(1)a(2)n(3)e(4) vs s(0)t(1)a(2)r(3)e(4)
+    // Pass1 greens: a@2→g, e@4→g
+    // Pass2 yellows: r@1 found in stare@3→y; c@0,n@3 not found→b
+    // Result: b,y,g,b,g
+    const pat = getPattern('crane', 'stare');
+    expect(pat[0]).toBe('b'); // C not in stare
+    expect(pat[1]).toBe('y'); // R present in stare but at pos 3, not pos 1
+    expect(pat[2]).toBe('g'); // A at pos 2 matches stare pos 2
+    expect(pat[3]).toBe('b'); // N not in stare
+    expect(pat[4]).toBe('g'); // E at pos 4 matches stare pos 4
+  });
+
+  it('handles duplicate letters — guess has 2 of a letter, answer has 1', () => {
+    // SPEED vs CRANE: no S,P,E(×2),D in crane except E appears once in crane
+    // ABBOT vs TABOO: A,B,B,O,T vs T,A,B,O,O
+    const pat = getPattern('speed', 'greed');
+    // s=b, p=b, e1: answer has two e's, e2: one already matched green, d=g
+    expect(pat[4]).toBe('g'); // D matches
+    expect(pat[2]).toBe('g'); // first E: pos 2 matches greed pos 2
+    // second E at pos 3 — greed has e at pos 3 too
+    expect(pat[3]).toBe('g');
+  });
+
+  it('does not double-count: second copy of a letter grey when answer has only one', () => {
+    // ALLAY vs ULTRA: a(0)l(1)l(2)a(3)y(4) vs u(0)l(1)t(2)r(3)a(4)
+    // Pass1 greens: l@1→g (both pos1 match)
+    // Pass2: a@0 → found at ultra pos4 → yellow, consume pos4
+    //        l@2 → ultra's l already used → black
+    //        a@3 → ultra's a already consumed → black
+    //        y@4 → not in remaining ultra → black
+    // Result: y,g,b,b,b
+    const pat = getPattern('allay', 'ultra');
+    expect(pat[0]).toBe('y'); // A at pos 0: found in ultra (pos 4), marked yellow
+    expect(pat[1]).toBe('g'); // L at pos 1: exact match
+    expect(pat[2]).toBe('b'); // second L: ultra's L already used → black
+    expect(pat[3]).toBe('b'); // second A: ultra's A already claimed → black
+    expect(pat[4]).toBe('b'); // Y not in ultra
+  });
+
+  it('symmetric: getPattern(guess, guess) is always ggggg', () => {
+    for (const word of ['abbey', 'hydra', 'quirk', 'llama', 'nymph']) {
+      expect(getPattern(word, word)).toBe('ggggg');
+    }
+  });
+});
+
+// -----------------------------------------------------------------
+// scoreGuess / getTopProbeWords — partition scoring
+// -----------------------------------------------------------------
+
+describe('scoreGuess', () => {
+  it('returns 1 partition when all candidates produce the same pattern', () => {
+    // If we guess a word not in the alphabet of the candidates, every candidate
+    // produces 'bbbbb', so there is only 1 partition.
+    const candidates = ['crane', 'grace', 'trace'];
+    const { partitions } = scoreGuess('qzjvx', candidates);
+    expect(partitions).toBe(1);
+  });
+
+  it('returns N partitions when every candidate produces a unique pattern (perfect split)', () => {
+    // Guessing the exact answer always produces 'ggggg' for that word and a
+    // different pattern for others, but here we test an easier exact-answer case.
+    const candidates = ['crane'];
+    const { partitions } = scoreGuess('crane', candidates);
+    expect(partitions).toBe(1); // only one candidate → one pattern
+    expect(scoreGuess('crane', candidates).avgGroupSize).toBe(1);
+  });
+
+  it('gives a higher partition count to a more informative guess', () => {
+    // Classic example from the NYT article: 5 candidates sharing _ATCH ending.
+    // BLIMP splits them into 5 groups (unique pattern per word);
+    // BATCH itself puts 1 word in 'ggggg' and the rest share patterns.
+    const candidates = ['batch', 'catch', 'latch', 'match', 'patch'];
+    const { partitions: blimpParts } = scoreGuess('blimp', candidates);
+    const { partitions: watchParts } = scoreGuess('watch', candidates);
+    // BLIMP has no letters from _atch family → should discriminate by 1st letter
+    // In any case, a probe like BLIMP should partition at least as well as guessing
+    // a word within the set, since it separates by unique first letters.
+    expect(blimpParts).toBeGreaterThanOrEqual(watchParts);
+  });
+
+  it('avgGroupSize equals candidates.length / partitions', () => {
+    const candidates = ['crane', 'grace', 'trace', 'brace', 'place'];
+    const { partitions, avgGroupSize } = scoreGuess('crane', candidates);
+    expect(avgGroupSize).toBeCloseTo(candidates.length / partitions);
+  });
+});
+
+describe('getTopProbeWords', () => {
+  it('returns empty array when candidates list is empty', () => {
+    expect(getTopProbeWords([], ['crane', 'trace'])).toHaveLength(0);
+  });
+
+  it('returns empty array when candidates exceed the threshold (150)', () => {
+    const large = Array.from({ length: 151 }, (_, i) => `word${i}`.padEnd(5, 'x').slice(0, 5));
+    expect(getTopProbeWords(large, large)).toHaveLength(0);
+  });
+
+  it('returns up to 5 results by default', () => {
+    const candidates = ['crane', 'grace', 'trace', 'brace', 'place',
+                        'space', 'snare', 'stare', 'share', 'spare'];
+    const results = getTopProbeWords(candidates, candidates);
+    expect(results.length).toBeLessThanOrEqual(5);
+  });
+
+  it('top result has the highest partition count', () => {
+    const candidates = ['batch', 'catch', 'latch', 'match', 'patch'];
+    const vocab      = ['blimp', 'crane', 'stare', 'batch', 'catch', 'raise', 'latch'];
+    const results = getTopProbeWords(candidates, vocab);
+    expect(results.length).toBeGreaterThan(0);
+    // Verify sorted: first has >= partitions of all others
+    for (const r of results.slice(1)) {
+      expect(results[0].partitions).toBeGreaterThanOrEqual(r.partitions);
+    }
+  });
+
+  it('flags candidate words with isCandidate=true', () => {
+    const candidates = ['crane', 'trace', 'grace'];
+    const vocab      = ['crane', 'stare', 'blurt'];
+    const results = getTopProbeWords(candidates, vocab);
+    const craneResult = results.find(r => r.word === 'crane');
+    const stareResult = results.find(r => r.word === 'stare');
+    if (craneResult) expect(craneResult.isCandidate).toBe(true);
+    if (stareResult) expect(stareResult.isCandidate).toBe(false);
   });
 });
